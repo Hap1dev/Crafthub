@@ -18,6 +18,8 @@ model User {
   email     String   @unique
   password  String
   role      Role     @default(CUSTOMER)
+  refreshTokenHash String?
+  refreshTokenExpiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
