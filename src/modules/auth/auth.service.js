@@ -50,7 +50,8 @@ const login = async (data) => {
 	}
 	const payload = {
 		id: user.id,
-		email: user.email
+		email: user.email,
+		role: user.role
 	}
 	const accessToken = await jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: '15m' });
 	const refreshToken = await jwt.sign({ ...payload, type: 'refresh', jti: crypto.randomBytes(16).toString('hex') }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
@@ -123,7 +124,7 @@ const logout = async (userId) => {
 }
 
 const generateTokens = async (user) => {
-	const payload = { id: user.id, email: user.email };
+	const payload = { id: user.id, email: user.email, role: user.role };
 	const accessToken = await jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: '15m' });
 	const refreshToken = await jwt.sign({ ...payload, typ: "refresh", jti: crypto.randomBytes(16).toString('hex') }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
 	return { accessToken, refreshToken }

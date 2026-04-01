@@ -22,6 +22,31 @@ model User {
   refreshTokenExpiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  products Product[]
+}
+
+model Product{
+  id String @id @default(uuid())
+  title String
+  description String
+  image String
+  price Decimal @db.Decimal(10, 2)
+  stock Int
+  isActive Boolean @default(true)
+  sellerId String
+  categoryId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller User @relation(fields: [sellerId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+}
+
+model Category{
+  id String @id @default(uuid())
+  name String @unique
+  products Product[]
 }
 
 enum Role {
