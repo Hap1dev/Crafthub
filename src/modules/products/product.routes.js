@@ -5,6 +5,9 @@ import authorize from '../../middlewares/authorize.js';
 
 const router = express.Router();
 
-router.post('/', authenticate, authorize(['SELLER']), productController.create);
+router.get('/', productController.getAll);
+router.get('/:id', productController.getById);
+router.post('/', authenticate, authorize(['SELLER']), productController.createProduct);
+router.delete('/:id', authenticate, authorize(['SELLER']), productController.deleteProduct);
 
 export default router;
