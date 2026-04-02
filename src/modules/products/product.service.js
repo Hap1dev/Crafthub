@@ -39,11 +39,38 @@ const createProduct = async ({ title, description, image, price, stock, category
 	return data;
 }
 
-const deleteProduct = async (id) => {
-	const data = await prisma.product.delete({
+const softDelete = async (userId, productId) => {
+	const product = await prisma.product.findUnique({
+		where: {
+			id: productId
+		}
+	});
+	if(product.sellerId !== userId){
+		throw new Error('you can only delete your own product');
+	}
+	const data = await prisma.product.update({
 		where: {
 			id: id
+		},
+		data: {
+			isActive: false
 		}
+	});
+	return data;
+}
+
+const updateProduct = async (userId, productId, newData) => {
+	const product = await prisma.product.findUnique({
+		where: {
+			id: productId
+		}
+	});
+	if(product.sellerId !== userId){
+		throw new Error('you can only update your own product');
+	}
+	const data = await prisma.product.update({
+		where: { id: productId },
+		data: newData
 	});
 	return data;
 }
@@ -52,7 +79,8 @@ const productService = {
 	createProduct,
 	getAll,
 	getById,
-	deleteProduct
+	softDelete,
+	updateProduct
 };
 
 export default productService;

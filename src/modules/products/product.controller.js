@@ -32,9 +32,9 @@ const createProduct = async (req, res) => {
 	}
 }
 
-const deleteProduct = async(req, res) => {
+const softDelete = async(req, res) => {
 	try{
-		const data = await productService.deleteProduct(req.params.id);
+		const data = await productService.softDelete(req.user.id, req.params.id);
 		return res.status(200).json({
 			message: 'product deleted successfully',
 			product: data
@@ -44,11 +44,24 @@ const deleteProduct = async(req, res) => {
 	}
 }
 
+const updateProduct = async (req, res) => {
+	try{
+		const data = await productService.updateProduct(req.user.id, req.params.id, req.body);
+		return res.status(200).json({
+			message: 'product updated successfully',
+			product: data
+		});
+	}catch(error){	
+		return res.status(500).json({ error: error.message });
+	}
+}
+
 const productController = {
 	createProduct,
 	getAll,
 	getById,
-	deleteProduct
+	softDelete,
+	updateProduct
 }
 
 export default productController;

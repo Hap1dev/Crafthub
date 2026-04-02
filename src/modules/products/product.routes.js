@@ -8,6 +8,7 @@ const router = express.Router();
 router.get('/', productController.getAll);
 router.get('/:id', productController.getById);
 router.post('/', authenticate, authorize(['SELLER']), productController.createProduct);
-router.delete('/:id', authenticate, authorize(['SELLER']), productController.deleteProduct);
+router.delete('/:id', authenticate, authorize(['SELLER']), productController.softDelete);
+router.patch('/:id', authenticate, authorize(['SELLER']), productController.updateProduct);
 
 export default router;
