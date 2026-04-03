@@ -18,6 +18,9 @@ model User {
   email     String   @unique
   password  String
   role      Role     @default(CUSTOMER)
+  isVerified Boolean  @default(false)
+  verificationToken String?
+  verificationTokenExpiresAt DateTime?
   refreshTokenHash String?
   refreshTokenExpiresAt DateTime?
   resetPasswordToken String?

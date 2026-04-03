@@ -15,21 +15,31 @@ const register = async (data) => {
 		throw new Error('user already exist');
 	}
 
+	const verificationToken = crypto.randomBytes(32).toString('hex');
+	const verificationTokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+	const verificationTokenExpiresAt = new Date();
+	verificationTokenExpiresAt.setHours(verificationTokenExpiresAt.getHours() + 24);
+
 	const passwordHash = await bcrypt.hash(data.password, 10);
 	const user = await prisma.user.create({
 		data: {
 			name: data.name,
 			email: data.email,
 			password: passwordHash,
-			role: data.role
+			role: data.role,
+			verificationToken: verificationTokenHash,
+			verificationTokenExpiresAt
 		}
 	});
+
+	await mailer.sendVerificationEmail(user.email, verificationToken);
 
 	return {
 		id: user.id,
 		name: user.name,
 		email: user.email,
-		role: user.role
+		role: user.role,
+		isVerified: user.isVerified
 	};
 }
 
@@ -43,6 +53,11 @@ const login = async (data) => {
 	if(!user){
 		throw new Error('invalid credentials');
 	}
+
+	if (!user.isVerified) {
+		throw new Error('please verify your email before logging in');
+	}
+
 	// 2. if yes, compare entered password with correct password
 	const match = await bcrypt.compare(data.password, user.password);
 	// 3. if true, create access token
@@ -184,6 +199,67 @@ const resetPassword = async (data) => {
 	});
 }
 
+const verifyEmail = async (token) => {
+	const verificationTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+	const user = await prisma.user.findFirst({
+		where: {
+			verificationToken: verificationTokenHash,
+			verificationTokenExpiresAt: {
+				gt: new Date()
+			}
+		}
+	});
+
+	if (!user) {
+		throw new Error('invalid or expired verification token');
+	}
+
+	await prisma.user.update({
+		where: {
+			id: user.id
+		},
+		data: {
+			isVerified: true,
+			verificationToken: null,
+			verificationTokenExpiresAt: null
+		}
+	});
+}
+
+const resendVerification = async (email) => {
+	const user = await prisma.user.findUnique({
+		where: {
+			email
+		}
+	});
+
+	if (!user) {
+		throw new Error('user not found');
+	}
+
+	if (user.isVerified) {
+		throw new Error('user already verified');
+	}
+
+	const verificationToken = crypto.randomBytes(32).toString('hex');
+	const verificationTokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+	const verificationTokenExpiresAt = new Date();
+	verificationTokenExpiresAt.setHours(verificationTokenExpiresAt.getHours() + 24);
+
+	await prisma.user.update({
+		where: {
+			id: user.id
+		},
+		data: {
+			verificationToken: verificationTokenHash,
+			verificationTokenExpiresAt
+		}
+	});
+
+	await mailer.sendVerificationEmail(user.email, verificationToken);
+}
+
 const generateTokens = async (user) => {
 	const payload = { id: user.id, email: user.email, role: user.role };
 	const accessToken = await jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: '15m' });
@@ -215,7 +291,9 @@ const authService = {
 	refresh,
 	logout,
 	forgotPassword,
-	resetPassword
+	resetPassword,
+	verifyEmail,
+	resendVerification
 }
 
 export default authService;

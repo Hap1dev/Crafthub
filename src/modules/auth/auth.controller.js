@@ -4,7 +4,7 @@ const register = async (req, res) => {
 	try{
 		const data = await authService.register(req.body)
 		return res.status(200).json({
-			message: 'user registered successfully',
+			message: 'user registered successfully. please check your email to verify your account.',
 			user: data
 		});
 	}catch(error){
@@ -22,6 +22,9 @@ const login = async (req, res) => {
 	}catch(error){
 		if (error.message === 'invalid credentials') {
 			return res.status(401).json({ error: error.message });
+		}
+		if (error.message === 'please verify your email before logging in') {
+			return res.status(403).json({ error: error.message });
 		}
 		return res.status(500).json({error: error.message});
 	}
@@ -65,13 +68,33 @@ const resetPassword = async (req, res) => {
 	}
 }
 
+const verifyEmail = async (req, res) => {
+	try {
+		await authService.verifyEmail(req.query.token);
+		return res.status(200).json({ message: 'email verified successfully. you can now log in.' });
+	} catch (error) {
+		return res.status(500).json({ error: error.message });
+	}
+}
+
+const resendVerification = async (req, res) => {
+	try {
+		await authService.resendVerification(req.body.email);
+		return res.status(200).json({ message: 'verification email resent successfully.' });
+	} catch (error) {
+		return res.status(500).json({ error: error.message });
+	}
+}
+
 const authController = {
 	register,
 	login,
 	refresh,
 	logout,
 	forgotPassword,
-	resetPassword
+	resetPassword,
+	verifyEmail,
+	resendVerification
 };
 
 
