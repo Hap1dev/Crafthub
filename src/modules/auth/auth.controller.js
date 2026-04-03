@@ -42,11 +42,34 @@ const logout = async (req, res) => {
 	}
 }
 
+const forgotPassword = async (req, res) => {
+	try{
+		const token = await authService.forgotPassword(req.body.email);
+		return res.status(200).json({
+			message: 'password reset token generated',
+			token
+		});
+	}catch(error){
+		return res.status(500).json({ error: error.message });
+	}
+}
+
+const resetPassword = async (req, res) => {
+	try{
+		await authService.resetPassword(req.body);
+		return res.status(200).json({ message: 'password reset successfully' });
+	}catch(error){
+		return res.status(500).json({ error: error.message });
+	}
+}
+
 const authController = {
 	register,
 	login,
 	refresh,
-	logout
+	logout,
+	forgotPassword,
+	resetPassword
 };
 
 

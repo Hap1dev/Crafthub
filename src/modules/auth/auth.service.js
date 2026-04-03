@@ -123,6 +123,72 @@ const logout = async (userId) => {
 	});
 }
 
+const forgotPassword = async (email) => {
+	const user = await prisma.user.findUnique({
+		where: {
+			email
+		}
+	});
+	if(!user){
+		throw new Error('user not found');
+	}
+
+	const resetToken = crypto.randomBytes(32).toString('hex');
+	const resetTokenHash = await bcrypt.hash(resetToken, 10);
+	const expiresAt = new Date();
+	expiresAt.setHours(expiresAt.getHours() + 1);
+
+	await prisma.user.update({
+		where: {
+			id: user.id
+		},
+		data: {
+			resetPasswordToken: resetTokenHash,
+			resetPasswordExpiresAt: expiresAt
+		}
+	});
+
+	return resetToken;
+}
+
+const resetPassword = async (data) => {
+	const { token, newPassword } = data;
+	const users = await prisma.user.findMany({
+		where: {
+			resetPasswordExpiresAt: {
+				gt: new Date()
+			}
+		}
+	});
+
+	let matchedUser = null;
+	for (const user of users) {
+		const isMatch = await bcrypt.compare(token, user.resetPasswordToken);
+		if (isMatch) {
+			matchedUser = user;
+			break;
+		}
+	}
+
+	if (!matchedUser) {
+		throw new Error('invalid or expired reset token');
+	}
+
+	const passwordHash = await bcrypt.hash(newPassword, 10);
+	await prisma.user.update({
+		where: {
+			id: matchedUser.id
+		},
+		data: {
+			password: passwordHash,
+			resetPasswordToken: null,
+			resetPasswordExpiresAt: null,
+			refreshTokenHash: null,
+			refreshTokenExpiresAt: null
+		}
+	});
+}
+
 const generateTokens = async (user) => {
 	const payload = { id: user.id, email: user.email, role: user.role };
 	const accessToken = await jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: '15m' });
@@ -152,7 +218,9 @@ const authService = {
 	register,
 	login,
 	refresh,
-	logout
+	logout,
+	forgotPassword,
+	resetPassword
 }
 
 export default authService;

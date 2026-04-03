@@ -20,6 +20,8 @@ model User {
   role      Role     @default(CUSTOMER)
   refreshTokenHash String?
   refreshTokenExpiresAt DateTime?
+  resetPasswordToken String?
+  resetPasswordExpiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
