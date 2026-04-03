@@ -44,10 +44,9 @@ const logout = async (req, res) => {
 
 const forgotPassword = async (req, res) => {
 	try{
-		const token = await authService.forgotPassword(req.body.email);
+		await authService.forgotPassword(req.body.email);
 		return res.status(200).json({
-			message: 'password reset token generated',
-			token
+			message: 'if a user with that email exists, a password reset link has been sent.'
 		});
 	}catch(error){
 		return res.status(500).json({ error: error.message });

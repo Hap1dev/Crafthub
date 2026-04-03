@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import mailer from '../../lib/mailer.js';
 
 const register = async (data) => {
 	const existingUser = await prisma.user.findUnique({
@@ -134,7 +135,7 @@ const forgotPassword = async (email) => {
 	}
 
 	const resetToken = crypto.randomBytes(32).toString('hex');
-	const resetTokenHash = await bcrypt.hash(resetToken, 10);
+	const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
 	const expiresAt = new Date();
 	expiresAt.setHours(expiresAt.getHours() + 1);
 
@@ -148,36 +149,30 @@ const forgotPassword = async (email) => {
 		}
 	});
 
-	return resetToken;
+	await mailer.sendResetPasswordEmail(user.email, resetToken);
 }
 
 const resetPassword = async (data) => {
 	const { token, newPassword } = data;
-	const users = await prisma.user.findMany({
+	const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+	const user = await prisma.user.findFirst({
 		where: {
+			resetPasswordToken: resetTokenHash,
 			resetPasswordExpiresAt: {
 				gt: new Date()
 			}
 		}
 	});
 
-	let matchedUser = null;
-	for (const user of users) {
-		const isMatch = await bcrypt.compare(token, user.resetPasswordToken);
-		if (isMatch) {
-			matchedUser = user;
-			break;
-		}
-	}
-
-	if (!matchedUser) {
+	if (!user) {
 		throw new Error('invalid or expired reset token');
 	}
 
 	const passwordHash = await bcrypt.hash(newPassword, 10);
 	await prisma.user.update({
 		where: {
-			id: matchedUser.id
+			id: user.id
 		},
 		data: {
 			password: passwordHash,
