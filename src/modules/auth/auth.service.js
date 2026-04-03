@@ -41,13 +41,13 @@ const login = async (data) => {
 		}
 	});
 	if(!user){
-		throw new Error('user not found');
+		throw new Error('invalid credentials');
 	}
 	// 2. if yes, compare entered password with correct password
-	const match = bcrypt.compare(data.password, user.password);
+	const match = await bcrypt.compare(data.password, user.password);
 	// 3. if true, create access token
 	if(!match){
-		throw new Error('invalid password');
+		throw new Error('invalid credentials');
 	}
 	const payload = {
 		id: user.id,

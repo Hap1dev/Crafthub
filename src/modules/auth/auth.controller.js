@@ -20,6 +20,9 @@ const login = async (req, res) => {
 			...data
 		});
 	}catch(error){
+		if (error.message === 'invalid credentials') {
+			return res.status(401).json({ error: error.message });
+		}
 		return res.status(500).json({error: error.message});
 	}
 }
