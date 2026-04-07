@@ -19,7 +19,7 @@ const getById = async (id) => {
 }
 
 const createProduct = async ({ title, description, image, price, stock, categoryId, isActive, sellerId }) => {
-	if(!title || !price || !stock || !categoryId){
+	if(!title || !price || !stock || !categoryId || !image){
 		throw new Error('missing required fields')
 	}
 
@@ -50,7 +50,7 @@ const softDelete = async (userId, productId) => {
 	}
 	const data = await prisma.product.update({
 		where: {
-			id: id
+			id: productId
 		},
 		data: {
 			isActive: false
