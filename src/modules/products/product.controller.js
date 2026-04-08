@@ -58,7 +58,13 @@ const softDelete = async(req, res) => {
 
 const updateProduct = async (req, res) => {
 	try{
-		const updateData = { ...req.body };
+		// Sanitize input: Only allow updating specific fields
+		const { title, description, price, stock, categoryId, isActive } = req.body;
+		const updateData = { title, description, price, stock, categoryId, isActive };
+		
+		// Remove undefined fields
+		Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
 		if (req.file) {
 			updateData.image = `/uploads/products/${req.file.filename}`;
 		}

@@ -1,15 +1,11 @@
-import { prisma } from '../../lib/prisma.js';
+import authRepository from './auth.repository.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import mailer from '../../lib/mailer.js';
 
 const register = async (data) => {
-	const existingUser = await prisma.user.findUnique({
-		where: {
-			email: data.email
-		}
-	});
+	const existingUser = await authRepository.findUserByEmail(data.email);
 
 	if(existingUser){
 		throw new Error('user already exist');
@@ -21,15 +17,13 @@ const register = async (data) => {
 	verificationTokenExpiresAt.setHours(verificationTokenExpiresAt.getHours() + 24);
 
 	const passwordHash = await bcrypt.hash(data.password, 10);
-	const user = await prisma.user.create({
-		data: {
-			name: data.name,
-			email: data.email,
-			password: passwordHash,
-			role: data.role,
-			verificationToken: verificationTokenHash,
-			verificationTokenExpiresAt
-		}
+	const user = await authRepository.createUser({
+		name: data.name,
+		email: data.email,
+		password: passwordHash,
+		role: data.role,
+		verificationToken: verificationTokenHash,
+		verificationTokenExpiresAt
 	});
 
 	await mailer.sendVerificationEmail(user.email, verificationToken);
@@ -44,12 +38,7 @@ const register = async (data) => {
 }
 
 const login = async (data) => {
-	// 1. check if user with email exist
-	const user = await prisma.user.findUnique({
-		where: {
-			email: data.email
-		}
-	});
+	const user = await authRepository.findUserByEmail(data.email);
 	if(!user){
 		throw new Error('invalid credentials');
 	}
@@ -58,27 +47,21 @@ const login = async (data) => {
 		throw new Error('please verify your email before logging in');
 	}
 
-	// 2. if yes, compare entered password with correct password
 	const match = await bcrypt.compare(data.password, user.password);
-	// 3. if true, create access token
 	if(!match){
 		throw new Error('invalid credentials');
 	}
-	const payload = {
-		id: user.id,
-		email: user.email,
-		role: user.role
-	}
-	const accessToken = await jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: '15m' });
-	const refreshToken = await jwt.sign({ ...payload, type: 'refresh', jti: crypto.randomBytes(16).toString('hex') }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+
+	const { accessToken, refreshToken } = await generateTokens(user);
 	const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
 	const refreshTokenExpiresAt = calculateRefreshTokenExpiry();
+	
 	await updateUserRefreshToken({
 		userId: user.id,
 		refreshTokenHash,
 		refreshTokenExpiresAt
 	});
-	// 4. return user
+
 	return {
 		user: {
 			id: user.id,
@@ -94,20 +77,17 @@ const login = async (data) => {
 }
 
 const refresh = async (refreshToken) => {
-	// 1. ensure refreshToken is passed
 	if(!refreshToken){
 		throw new Error('refresh token is required');
 	}
 	const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 	const userId = decoded.id;
-	const user = await prisma.user.findUnique({
-		where: {
-			id: userId
-		}
-	});
+	
+	const user = await authRepository.findUserById(userId);
 	if(!user || !user.refreshTokenHash || !user.refreshTokenExpiresAt){
 		throw new Error('invalid refresh token');
 	}
+
 	const isMatch = await bcrypt.compare(refreshToken, user.refreshTokenHash);
 	if(!isMatch){
 		throw new Error('invalid refresh token');
@@ -116,11 +96,18 @@ const refresh = async (refreshToken) => {
 	if(new Date() > user.refreshTokenExpiresAt){
 		throw new Error('refresh token is expired');
 	}
+	
 	const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await generateTokens(user);
-	// 2. ensure refreshToken is valid
-	// 3. ensure refreshToken is not expired
-	// 4. generate new accessToken and refreshToken
-	// 5. return access and refresh token
+	
+	const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
+	const newRefreshTokenExpiresAt = calculateRefreshTokenExpiry();
+	
+	await updateUserRefreshToken({
+		userId: user.id,
+		refreshTokenHash: newRefreshTokenHash,
+		refreshTokenExpiresAt: newRefreshTokenExpiresAt
+	});
+
 	return {
 		newAccessToken,
 		newRefreshToken
@@ -128,23 +115,14 @@ const refresh = async (refreshToken) => {
 }
 
 const logout = async (userId) => {
-	await prisma.user.update({
-		where: {
-			id: userId
-		},
-		data: {
-			refreshTokenHash: null,
-			refreshTokenExpiresAt: null
-		}
+	await authRepository.updateUser(userId, {
+		refreshTokenHash: null,
+		refreshTokenExpiresAt: null
 	});
 }
 
 const forgotPassword = async (email) => {
-	const user = await prisma.user.findUnique({
-		where: {
-			email
-		}
-	});
+	const user = await authRepository.findUserByEmail(email);
 	if(!user){
 		throw new Error('user not found');
 	}
@@ -154,14 +132,9 @@ const forgotPassword = async (email) => {
 	const expiresAt = new Date();
 	expiresAt.setHours(expiresAt.getHours() + 1);
 
-	await prisma.user.update({
-		where: {
-			id: user.id
-		},
-		data: {
-			resetPasswordToken: resetTokenHash,
-			resetPasswordExpiresAt: expiresAt
-		}
+	await authRepository.updateUser(user.id, {
+		resetPasswordToken: resetTokenHash,
+		resetPasswordExpiresAt: expiresAt
 	});
 
 	await mailer.sendResetPasswordEmail(user.email, resetToken);
@@ -171,68 +144,40 @@ const resetPassword = async (data) => {
 	const { token, newPassword } = data;
 	const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-	const user = await prisma.user.findFirst({
-		where: {
-			resetPasswordToken: resetTokenHash,
-			resetPasswordExpiresAt: {
-				gt: new Date()
-			}
-		}
-	});
+	const user = await authRepository.findUserByResetToken(resetTokenHash);
 
 	if (!user) {
 		throw new Error('invalid or expired reset token');
 	}
 
 	const passwordHash = await bcrypt.hash(newPassword, 10);
-	await prisma.user.update({
-		where: {
-			id: user.id
-		},
-		data: {
-			password: passwordHash,
-			resetPasswordToken: null,
-			resetPasswordExpiresAt: null,
-			refreshTokenHash: null,
-			refreshTokenExpiresAt: null
-		}
+	await authRepository.updateUser(user.id, {
+		password: passwordHash,
+		resetPasswordToken: null,
+		resetPasswordExpiresAt: null,
+		refreshTokenHash: null,
+		refreshTokenExpiresAt: null
 	});
 }
 
 const verifyEmail = async (token) => {
 	const verificationTokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-	const user = await prisma.user.findFirst({
-		where: {
-			verificationToken: verificationTokenHash,
-			verificationTokenExpiresAt: {
-				gt: new Date()
-			}
-		}
-	});
+	const user = await authRepository.findUserByVerificationToken(verificationTokenHash);
 
 	if (!user) {
 		throw new Error('invalid or expired verification token');
 	}
 
-	await prisma.user.update({
-		where: {
-			id: user.id
-		},
-		data: {
-			isVerified: true,
-			verificationToken: null,
-			verificationTokenExpiresAt: null
-		}
+	await authRepository.updateUser(user.id, {
+		isVerified: true,
+		verificationToken: null,
+		verificationTokenExpiresAt: null
 	});
 }
 
 const resendVerification = async (email) => {
-	const user = await prisma.user.findUnique({
-		where: {
-			email
-		}
-	});
+	const user = await authRepository.findUserByEmail(email);
 
 	if (!user) {
 		throw new Error('user not found');
@@ -247,14 +192,9 @@ const resendVerification = async (email) => {
 	const verificationTokenExpiresAt = new Date();
 	verificationTokenExpiresAt.setHours(verificationTokenExpiresAt.getHours() + 24);
 
-	await prisma.user.update({
-		where: {
-			id: user.id
-		},
-		data: {
-			verificationToken: verificationTokenHash,
-			verificationTokenExpiresAt
-		}
+	await authRepository.updateUser(user.id, {
+		verificationToken: verificationTokenHash,
+		verificationTokenExpiresAt
 	});
 
 	await mailer.sendVerificationEmail(user.email, verificationToken);
@@ -263,7 +203,7 @@ const resendVerification = async (email) => {
 const generateTokens = async (user) => {
 	const payload = { id: user.id, email: user.email, role: user.role };
 	const accessToken = await jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: '15m' });
-	const refreshToken = await jwt.sign({ ...payload, typ: "refresh", jti: crypto.randomBytes(16).toString('hex') }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+	const refreshToken = await jwt.sign({ ...payload, type: "refresh", jti: crypto.randomBytes(16).toString('hex') }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
 	return { accessToken, refreshToken }
 }
 
@@ -274,14 +214,9 @@ const calculateRefreshTokenExpiry = () => {
 }
 
 const updateUserRefreshToken = async ({ userId, refreshTokenHash, refreshTokenExpiresAt }) => {
-	await prisma.user.update({
-		where: {
-			id: userId
-		},
-		data: {
-			refreshTokenHash,
-			refreshTokenExpiresAt
-		}
+	await authRepository.updateUser(userId, {
+		refreshTokenHash,
+		refreshTokenExpiresAt
 	});
 }
 
